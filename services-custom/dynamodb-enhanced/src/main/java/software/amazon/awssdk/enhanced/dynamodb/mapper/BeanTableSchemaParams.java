@@ -16,6 +16,7 @@
 package software.amazon.awssdk.enhanced.dynamodb.mapper;
 
 import java.lang.invoke.MethodHandles;
+import java.util.Optional;
 import software.amazon.awssdk.annotations.Immutable;
 import software.amazon.awssdk.annotations.SdkPublicApi;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
@@ -35,10 +36,12 @@ public final class BeanTableSchemaParams<T>
     implements ToCopyableBuilder<BeanTableSchemaParams.Builder<T>, BeanTableSchemaParams<T>> {
     private final Class<T> beanClass;
     private final MethodHandles.Lookup lookup;
+    private final AttributeNamingStrategy attributeNamingStrategy;
 
     private BeanTableSchemaParams(BuilderImpl<T> builder) {
         this.beanClass = builder.beanClass;
         this.lookup = builder.lookup;
+        this.attributeNamingStrategy = builder.attributeNamingStrategy;
     }
 
     public Class<T> beanClass() {
@@ -47,6 +50,13 @@ public final class BeanTableSchemaParams<T>
 
     public MethodHandles.Lookup lookup() {
         return lookup;
+    }
+
+    /**
+     * The strategy set on the builder, or empty when the builder omitted it.
+     */
+    public Optional<AttributeNamingStrategy> attributeNamingStrategy() {
+        return Optional.ofNullable(attributeNamingStrategy);
     }
 
     @Override
@@ -86,11 +96,24 @@ public final class BeanTableSchemaParams<T>
          * @return This builder for method chaining.
          */
         Builder<T> lookup(MethodHandles.Lookup lookup);
+
+        /**
+         * Transforms each property name while the schema is built. {@code @DynamoDbAttribute} is stored as written.
+         * An omitted strategy, or a null argument, keeps today's names.
+         *
+         * {@snippet :
+         * BeanTableSchemaParams.builder(Customer.class)
+         *     .attributeNamingStrategy(AttributeNamingStrategies.SNAKE_CASE)
+         *     .build();
+         * }
+         */
+        Builder<T> attributeNamingStrategy(AttributeNamingStrategy attributeNamingStrategy);
     }
 
     private static class BuilderImpl<T> implements Builder<T> {
         private Class<T> beanClass;
         private MethodHandles.Lookup lookup;
+        private AttributeNamingStrategy attributeNamingStrategy;
 
         private BuilderImpl(Class<T> beanClass) {
             this.beanClass = beanClass;
@@ -99,6 +122,7 @@ public final class BeanTableSchemaParams<T>
         private BuilderImpl(BeanTableSchemaParams<T> info) {
             this.beanClass = info.beanClass;
             this.lookup = info.lookup;
+            this.attributeNamingStrategy = info.attributeNamingStrategy;
         }
 
         public BuilderImpl<T> beanClass(Class<T> beanClass) {
@@ -108,6 +132,11 @@ public final class BeanTableSchemaParams<T>
 
         public BuilderImpl<T> lookup(MethodHandles.Lookup lookup) {
             this.lookup = lookup;
+            return this;
+        }
+
+        public BuilderImpl<T> attributeNamingStrategy(AttributeNamingStrategy attributeNamingStrategy) {
+            this.attributeNamingStrategy = attributeNamingStrategy;
             return this;
         }
 

@@ -62,7 +62,12 @@ import software.amazon.awssdk.utils.Validate;
 @SdkPublicApi
 @ThreadSafe
 public final class ImmutableAttribute<T, B, R> {
+    static final String ANNOTATION_SOURCE = "@DynamoDbAttribute";
+    static final String STORED_NAME_SOURCE = "storedName";
+
     private final String name;
+    private final boolean literalStoredName;
+    private final String literalSource;
     private final Function<T, R> getter;
     private final BiConsumer<B, R> setter;
     private final Collection<StaticAttributeTag> tags;
@@ -70,7 +75,19 @@ public final class ImmutableAttribute<T, B, R> {
     private final AttributeConverter<R> attributeConverter;
 
     private ImmutableAttribute(Builder<T, B, R> builder) {
-        this.name = Validate.paramNotNull(builder.name, "name");
+        if (builder.storedNameSet && builder.name != null) {
+            throw new IllegalArgumentException("Attribute must set exactly one of name and storedName. name='"
+                                               + builder.name + "', storedName='" + builder.storedName + "'.");
+        }
+        if (builder.storedNameSet) {
+            this.name = Validate.paramNotNull(builder.storedName, "storedName");
+            this.literalStoredName = true;
+            this.literalSource = builder.literalSource;
+        } else {
+            this.name = Validate.paramNotNull(builder.name, "name");
+            this.literalStoredName = false;
+            this.literalSource = null;
+        }
         this.getter = Validate.paramNotNull(builder.getter, "getter");
         this.setter = Validate.paramNotNull(builder.setter, "setter");
         this.tags = builder.tags == null ? Collections.emptyList() : Collections.unmodifiableCollection(builder.tags);
@@ -165,17 +182,36 @@ public final class ImmutableAttribute<T, B, R> {
      * Converts an instance of this class to a {@link Builder} that can be used to modify and reconstruct it.
      */
     public Builder<T, B, R> toBuilder() {
-        return new Builder<T, B, R>(this.type).name(this.name)
-                                              .getter(this.getter)
-                                              .setter(this.setter)
-                                              .tags(this.tags)
-                                              .attributeConverter(this.attributeConverter);
+        Builder<T, B, R> builder = new Builder<>(this.type);
+        if (literalStoredName) {
+            if (ANNOTATION_SOURCE.equals(literalSource)) {
+                builder.annotationAttributeName(this.name);
+            } else {
+                builder.storedName(this.name);
+            }
+        } else {
+            builder.name(this.name);
+        }
+        return builder.getter(this.getter)
+                      .setter(this.setter)
+                      .tags(this.tags)
+                      .attributeConverter(this.attributeConverter);
     }
 
+    boolean hasStoredName() {
+        return literalStoredName;
+    }
+
+    String literalSource() {
+        return literalSource;
+    }
 
     ResolvedImmutableAttribute<T, B> resolve(AttributeConverterProvider attributeConverterProvider) {
-        return ResolvedImmutableAttribute.create(this,
-                                                 converterFrom(attributeConverterProvider));
+        return resolve(attributeConverterProvider, this.name);
+    }
+
+    ResolvedImmutableAttribute<T, B> resolve(AttributeConverterProvider attributeConverterProvider, String storedName) {
+        return ResolvedImmutableAttribute.create(this, converterFrom(attributeConverterProvider), storedName);
     }
 
     private AttributeConverter<R> converterFrom(AttributeConverterProvider attributeConverterProvider) {
@@ -191,6 +227,9 @@ public final class ImmutableAttribute<T, B, R> {
     public static final class Builder<T, B, R> {
         private final EnhancedType<R> type;
         private String name;
+        private String storedName;
+        private boolean storedNameSet;
+        private String literalSource;
         private Function<T, R> getter;
         private BiConsumer<B, R> setter;
         private List<StaticAttributeTag> tags;
@@ -201,10 +240,41 @@ public final class ImmutableAttribute<T, B, R> {
         }
 
         /**
-         * The name of this attribute
+         * The name of this attribute. A schema attribute naming strategy transforms this value. Use
+         * {@link #storedName(String)} when the name must be stored unchanged, for example a key such as {@code PK}.
          */
         public Builder<T, B, R> name(String name) {
             this.name = name;
+            return this;
+        }
+
+        /**
+         * Stores this name unchanged. The schema attribute naming strategy does not transform it.
+         *
+         * <p>
+         * An attribute sets {@link #name(String)} or this method, not both.
+         *
+         * {@snippet :
+         * a.storedName("PK")
+         *  .getter(Customer::getId)
+         *  .setter(Customer.Builder::id)
+         *  .tags(StaticAttributeTags.primaryPartitionKey());
+         * }
+         */
+        public Builder<T, B, R> storedName(String storedName) {
+            this.storedName = storedName;
+            this.storedNameSet = true;
+            this.literalSource = STORED_NAME_SOURCE;
+            return this;
+        }
+
+        /**
+         * Stores an {@code @DynamoDbAttribute} value unchanged.
+         */
+        Builder<T, B, R> annotationAttributeName(String annotationValue) {
+            this.storedName = annotationValue;
+            this.storedNameSet = true;
+            this.literalSource = ANNOTATION_SOURCE;
             return this;
         }
 

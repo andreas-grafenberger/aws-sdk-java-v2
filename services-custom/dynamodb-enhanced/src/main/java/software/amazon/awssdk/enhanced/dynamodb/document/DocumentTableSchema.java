@@ -38,6 +38,8 @@ import software.amazon.awssdk.enhanced.dynamodb.TableMetadata;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 import software.amazon.awssdk.enhanced.dynamodb.internal.converter.ConverterProviderResolver;
 import software.amazon.awssdk.enhanced.dynamodb.internal.document.DefaultEnhancedDocument;
+import software.amazon.awssdk.enhanced.dynamodb.internal.mapper.AttributeNameResolver;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.AttributeNamingStrategy;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.StaticImmutableTableSchema;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.StaticTableMetadata;
 import software.amazon.awssdk.enhanced.dynamodb.model.EnhancedVectorIndex;
@@ -72,11 +74,19 @@ import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
  */
 @SdkPublicApi
 public final class DocumentTableSchema implements TableSchema<EnhancedDocument> {
+    private static final String DUPLICATE_KEY_MESSAGE =
+        "Attempt to set an index key that conflicts with an existing index key of the same name and index. "
+        + "Index name: %s; attribute name: %s)";
+
     private final TableMetadata tableMetadata;
     private final List<AttributeConverterProvider> attributeConverterProviders;
+    private final AttributeNamingStrategy attributeNamingStrategy;
+    private final Set<String> literalStoredNames;
 
     private DocumentTableSchema(Builder builder) {
         this.attributeConverterProviders = builder.attributeConverterProviders;
+        this.attributeNamingStrategy = builder.attributeNamingStrategy;
+        this.literalStoredNames = Collections.unmodifiableSet(new LinkedHashSet<>(builder.literalStoredNames));
         this.tableMetadata = builder.staticTableMetaDataBuilder.build();
     }
 
@@ -112,7 +122,8 @@ public final class DocumentTableSchema implements TableSchema<EnhancedDocument> 
             return null;
         }
         List<AttributeConverterProvider> providers = mergeAttributeConverterProviders(item);
-        return item.toBuilder().attributeConverterProviders(providers).build().toMap();
+        Map<String, AttributeValue> itemMap = item.toBuilder().attributeConverterProviders(providers).build().toMap();
+        return transformKeys(itemMap);
     }
 
     private List<AttributeConverterProvider> mergeAttributeConverterProviders(EnhancedDocument item) {
@@ -131,11 +142,13 @@ public final class DocumentTableSchema implements TableSchema<EnhancedDocument> 
             return null;
         }
         List<AttributeConverterProvider> providers = mergeAttributeConverterProviders(item);
-        return item.toBuilder().attributeConverterProviders(providers).build().toMap().entrySet()
-                   .stream()
-                   .filter(entry -> attributes.contains(entry.getKey()))
-                   .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue,
-                                             (left, right) -> left, LinkedHashMap::new));
+        Map<String, AttributeValue> itemMap =
+            transformKeys(item.toBuilder().attributeConverterProviders(providers).build().toMap());
+        return itemMap.entrySet()
+                      .stream()
+                      .filter(entry -> attributes.contains(entry.getKey()))
+                      .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue,
+                                                (left, right) -> left, LinkedHashMap::new));
     }
 
     @Override
@@ -144,11 +157,25 @@ public final class DocumentTableSchema implements TableSchema<EnhancedDocument> 
             return null;
         }
         List<AttributeConverterProvider> providers = mergeAttributeConverterProviders(item);
-        return item.toBuilder()
-                   .attributeConverterProviders(providers)
-                   .build()
-                   .toMap()
-                   .get(attributeName);
+        return transformKeys(item.toBuilder()
+                                 .attributeConverterProviders(providers)
+                                 .build()
+                                 .toMap())
+            .get(attributeName);
+    }
+
+    private Map<String, AttributeValue> transformKeys(Map<String, AttributeValue> itemMap) {
+        if (itemMap == null || attributeNamingStrategy == null) {
+            return itemMap;
+        }
+        AttributeNameResolver resolver = new AttributeNameResolver(attributeNamingStrategy, "Document");
+        Map<String, AttributeValue> stored = new LinkedHashMap<>();
+        itemMap.forEach((key, value) -> {
+            boolean literal = literalStoredNames.contains(key);
+            String storedName = resolver.resolve(key, literal, literal ? "addStoredName" : null);
+            stored.put(storedName, value);
+        });
+        return stored;
     }
 
     @Override
@@ -175,12 +202,48 @@ public final class DocumentTableSchema implements TableSchema<EnhancedDocument> 
     public static final class Builder {
 
         private final StaticTableMetadata.Builder staticTableMetaDataBuilder = StaticTableMetadata.builder();
+        private final List<DeclaredIndexKey> declaredIndexKeys = new ArrayList<>();
+        private final Set<String> literalStoredNames = new LinkedHashSet<>();
+        private final Map<String, Set<String>> partitionKeysByIndex = new LinkedHashMap<>();
+        private final Map<String, Set<String>> sortKeysByIndex = new LinkedHashMap<>();
 
         /**
          * By Default the defaultConverterProvider is used for converting AttributeValue to primitive types.
          */
         private List<AttributeConverterProvider> attributeConverterProviders =
             Collections.singletonList(ConverterProviderResolver.defaultConverterProvider());
+        private AttributeNamingStrategy attributeNamingStrategy;
+
+        /**
+         * Transforms document keys and {@code putString} or JSON keys. Declared index keys are transformed when the
+         * schema is built. An omitted strategy, or a null argument, keeps those names. {@link #addStoredName(String)}
+         * stores a name unchanged.
+         *
+         * {@snippet :
+         * DocumentTableSchema.builder()
+         *     .attributeNamingStrategy(AttributeNamingStrategies.SNAKE_CASE)
+         *     .addStoredName("PK")
+         *     .addIndexPartitionKey(TableMetadata.primaryIndexName(), "PK", AttributeValueType.S)
+         *     .build();
+         * }
+         */
+        public Builder attributeNamingStrategy(AttributeNamingStrategy attributeNamingStrategy) {
+            this.attributeNamingStrategy = attributeNamingStrategy;
+            return this;
+        }
+
+        /**
+         * Stores this name unchanged, both as a declared key and as a key on a document written through this schema.
+         *
+         * {@snippet :
+         * builder.addStoredName("PK")
+         *        .addIndexPartitionKey(TableMetadata.primaryIndexName(), "PK", AttributeValueType.S);
+         * }
+         */
+        public Builder addStoredName(String attributeName) {
+            this.literalStoredNames.add(attributeName);
+            return this;
+        }
 
         /**
          * Adds information about a partition key associated with a specific index.
@@ -191,7 +254,8 @@ public final class DocumentTableSchema implements TableSchema<EnhancedDocument> 
          * @throws IllegalArgumentException if a partition key has already been defined for this index
          */
         public Builder addIndexPartitionKey(String indexName, String attributeName, AttributeValueType attributeValueType) {
-            staticTableMetaDataBuilder.addIndexPartitionKey(indexName, attributeName, attributeValueType);
+            rejectDuplicateKey(partitionKeysByIndex, indexName, attributeName);
+            declaredIndexKeys.add(new DeclaredIndexKey(true, indexName, attributeName, attributeValueType));
             return this;
         }
 
@@ -204,7 +268,8 @@ public final class DocumentTableSchema implements TableSchema<EnhancedDocument> 
          * @throws IllegalArgumentException if a sort key has already been defined for this index
          */
         public Builder addIndexSortKey(String indexName, String attributeName, AttributeValueType attributeValueType) {
-            staticTableMetaDataBuilder.addIndexSortKey(indexName, attributeName, attributeValueType);
+            rejectDuplicateKey(sortKeysByIndex, indexName, attributeName);
+            declaredIndexKeys.add(new DeclaredIndexKey(false, indexName, attributeName, attributeValueType));
             return this;
         }
 
@@ -290,7 +355,57 @@ public final class DocumentTableSchema implements TableSchema<EnhancedDocument> 
          * Builds a {@link StaticImmutableTableSchema} based on the values this builder has been configured with
          */
         public DocumentTableSchema build() {
+            applyDeclaredKeys();
             return new DocumentTableSchema(this);
+        }
+
+        private void applyDeclaredKeys() {
+            if (declaredIndexKeys.isEmpty()) {
+                return;
+            }
+            AttributeNameResolver resolver = new AttributeNameResolver(attributeNamingStrategy, "Document");
+            List<DeclaredIndexKey> pending = new ArrayList<>(declaredIndexKeys);
+            List<String> storedNames = new ArrayList<>();
+            for (DeclaredIndexKey key : pending) {
+                boolean literal = literalStoredNames.contains(key.attributeName);
+                storedNames.add(resolver.resolve(key.attributeName, literal, literal ? "addStoredName" : null));
+            }
+            for (int index = 0; index < pending.size(); index++) {
+                DeclaredIndexKey key = pending.get(index);
+                String storedName = storedNames.get(index);
+                if (key.partition) {
+                    staticTableMetaDataBuilder.addIndexPartitionKey(key.indexName, storedName, key.attributeValueType);
+                } else {
+                    staticTableMetaDataBuilder.addIndexSortKey(key.indexName, storedName, key.attributeValueType);
+                }
+            }
+            declaredIndexKeys.clear();
+        }
+
+        private static void rejectDuplicateKey(Map<String, Set<String>> keysByIndex,
+                                               String indexName,
+                                               String attributeName) {
+            Set<String> names = keysByIndex.computeIfAbsent(indexName, ignored -> new LinkedHashSet<>());
+            if (!names.add(attributeName)) {
+                throw new IllegalArgumentException(String.format(DUPLICATE_KEY_MESSAGE, indexName, attributeName));
+            }
+        }
+
+        private static final class DeclaredIndexKey {
+            private final boolean partition;
+            private final String indexName;
+            private final String attributeName;
+            private final AttributeValueType attributeValueType;
+
+            private DeclaredIndexKey(boolean partition,
+                                     String indexName,
+                                     String attributeName,
+                                     AttributeValueType attributeValueType) {
+                this.partition = partition;
+                this.indexName = indexName;
+                this.attributeName = attributeName;
+                this.attributeValueType = attributeValueType;
+            }
         }
     }
 }

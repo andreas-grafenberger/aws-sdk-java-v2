@@ -23,6 +23,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -42,6 +43,8 @@ import software.amazon.awssdk.enhanced.dynamodb.DefaultAttributeConverterProvide
 import software.amazon.awssdk.enhanced.dynamodb.EnhancedType;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 import software.amazon.awssdk.enhanced.dynamodb.internal.converter.ConverterProviderResolver;
+import software.amazon.awssdk.enhanced.dynamodb.internal.mapper.AttributeNameResolver;
+import software.amazon.awssdk.enhanced.dynamodb.internal.mapper.MetaTableSchema;
 import software.amazon.awssdk.enhanced.dynamodb.internal.mapper.ResolvedImmutableAttribute;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
@@ -88,6 +91,7 @@ public final class StaticImmutableTableSchema<T, B> implements TableSchema<T> {
     private final Map<String, FlattenedMapper<T, B, ?>> flattenedObjectMappers;
     private final FlattenedMapperForMaps<T, B> flattenedMapMapper;
     private final List<String> attributeNames;
+    private final AttributeNamingStrategy attributeNamingStrategy;
 
     private static class FlattenedMapper<T, B, T1> {
         private final Function<T, T1> otherItemGetter;
@@ -201,10 +205,34 @@ public final class StaticImmutableTableSchema<T, B> implements TableSchema<T> {
 
         this.attributeConverterProvider =
                 ConverterProviderResolver.resolveProviders(builder.attributeConverterProviders);
+        this.attributeNamingStrategy = builder.attributeNamingStrategy;
 
-        // Resolve declared attributes and find converters for them
+        String schemaName = builder.itemType.rawClass().getSimpleName();
+        AttributeNameResolver nameResolver = new AttributeNameResolver(builder.attributeNamingStrategy, schemaName);
+        rejectFlattenedMap(builder, nameResolver, schemaName);
+        rejectOmittedChildStrategies(builder, nameResolver, schemaName);
+
+        Map<ImmutableAttribute<T, B, ?>, String> storedNamesByAttribute = new IdentityHashMap<>();
+        if (builder.attributes != null) {
+            builder.attributes.forEach(attribute -> storedNamesByAttribute.put(
+                attribute,
+                nameResolver.resolve(attribute.name(), attribute.hasStoredName(), attribute.literalSource())));
+        }
+        if (nameResolver.hasStrategy()) {
+            builder.additionalAttributes.forEach(attribute ->
+                nameResolver.recordExternalStoredName(attribute.attributeName(), "an extended schema"));
+            builder.flattenedObjectMappers.forEach(flattenedMapper -> {
+                String childName = childSchemaName(flattenedMapper.otherItemTableSchema);
+                flattenedMapper.otherItemTableSchema.attributeNames().forEach(attributeName ->
+                    nameResolver.recordExternalStoredName(attributeName, "flattened " + childName));
+            });
+        }
+
+        // Resolve declared attributes and find converters for them. Tags receive the stored name.
         Stream<ResolvedImmutableAttribute<T, B>> attributesStream = builder.attributes == null ?
-            Stream.empty() : builder.attributes.stream().map(a -> a.resolve(this.attributeConverterProvider));
+            Stream.empty() : builder.attributes.stream()
+                .map(attribute -> attribute.resolve(this.attributeConverterProvider,
+                                                    storedNamesByAttribute.get(attribute)));
 
         // Merge resolved declared attributes
         List<ResolvedImmutableAttribute<T, B>> mutableAttributeMappers = new ArrayList<>();
@@ -271,6 +299,100 @@ public final class StaticImmutableTableSchema<T, B> implements TableSchema<T> {
     }
 
     /**
+     * The strategy supplied to the builder, or null when the builder omitted it.
+     */
+    AttributeNamingStrategy declaredAttributeNamingStrategy() {
+        return attributeNamingStrategy;
+    }
+
+    private static <T, B> void rejectFlattenedMap(Builder<T, B> builder,
+                                                  AttributeNameResolver nameResolver,
+                                                  String schemaName) {
+        if (builder.flattenedMapMapper != null && nameResolver.changesNames()) {
+            throw new IllegalArgumentException(
+                schemaName + ": flattened map '" + builder.flattenedMapMapper.getItemName()
+                + "' cannot be used when the attribute naming strategy changes names.");
+        }
+    }
+
+    private static <T, B> void rejectOmittedChildStrategies(Builder<T, B> builder,
+                                                            AttributeNameResolver nameResolver,
+                                                            String schemaName) {
+        if (!nameResolver.changesNames()) {
+            return;
+        }
+        AttributeNamingStrategy parentStrategy = nameResolver.strategy();
+        builder.extendedSchemas.forEach(schema -> rejectIfChildOmitsStrategy(schema, parentStrategy, schemaName));
+        builder.flattenedObjectMappers.forEach(mapper ->
+            rejectIfChildOmitsStrategy(mapper.otherItemTableSchema, parentStrategy, schemaName));
+        if (builder.attributes != null) {
+            Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+            builder.attributes.forEach(attribute ->
+                walkAttributeType(attribute.type(), parentStrategy, schemaName, seen));
+        }
+    }
+
+    private static void walkAttributeType(EnhancedType<?> type,
+                                          AttributeNamingStrategy parentStrategy,
+                                          String parentName,
+                                          Set<Object> seen) {
+        if (type == null || !seen.add(type)) {
+            return;
+        }
+        type.tableSchema().ifPresent(schema -> {
+            if (seen.add(schema)) {
+                rejectIfChildOmitsStrategy(schema, parentStrategy, parentName);
+            }
+        });
+        for (EnhancedType<?> parameter : typeParameters(type)) {
+            walkAttributeType(parameter, parentStrategy, parentName, seen);
+        }
+    }
+
+    private static List<EnhancedType<?>> typeParameters(EnhancedType<?> type) {
+        try {
+            List<EnhancedType<?>> parameters = type.rawClassParameters();
+            return parameters == null ? Collections.emptyList() : parameters;
+        } catch (IllegalArgumentException e) {
+            return Collections.emptyList();
+        }
+    }
+
+    private static void rejectIfChildOmitsStrategy(TableSchema<?> child,
+                                                   AttributeNamingStrategy parentStrategy,
+                                                   String parentName) {
+        if (child instanceof MetaTableSchema) {
+            return;
+        }
+        StaticImmutableTableSchema<?, ?> staticSchema = unwrapStaticSchema(child);
+        if (staticSchema != null && staticSchema.declaredAttributeNamingStrategy() != null) {
+            return;
+        }
+        throw new IllegalArgumentException(
+            parentName + ": nested schema " + childSchemaName(child)
+            + " omits an attribute naming strategy while the parent uses " + parentStrategy + ".");
+    }
+
+    private static StaticImmutableTableSchema<?, ?> unwrapStaticSchema(TableSchema<?> schema) {
+        TableSchema<?> current = schema;
+        while (current instanceof WrappedTableSchema) {
+            current = ((WrappedTableSchema<?, ?>) current).delegateTableSchema();
+        }
+        if (current instanceof StaticImmutableTableSchema) {
+            return (StaticImmutableTableSchema<?, ?>) current;
+        }
+        return null;
+    }
+
+    private static String childSchemaName(TableSchema<?> schema) {
+        try {
+            return schema.itemType().rawClass().getSimpleName();
+        } catch (RuntimeException e) {
+            return schema.getClass().getSimpleName();
+        }
+    }
+
+    /**
      * Creates a builder for a {@link StaticImmutableTableSchema} typed to specific immutable data item class.
      * @param itemClass The immutable data item class object that the {@link StaticImmutableTableSchema} is to map to.
      * @param builderClass The builder class object that can be used to construct instances of the immutable data item.
@@ -303,11 +425,13 @@ public final class StaticImmutableTableSchema<T, B> implements TableSchema<T> {
         private final List<ResolvedImmutableAttribute<T, B>> additionalAttributes = new ArrayList<>();
         private final List<FlattenedMapper<T, B, ?>> flattenedObjectMappers = new ArrayList<>();
 
+        private final List<StaticImmutableTableSchema<?, ?>> extendedSchemas = new ArrayList<>();
         private FlattenedMapperForMaps<T, B> flattenedMapMapper;
         private List<ImmutableAttribute<T, B, ?>> attributes;
         private Supplier<B> newBuilderSupplier;
         private Function<B, T> buildItemFunction;
         private List<StaticTableTag> tags;
+        private AttributeNamingStrategy attributeNamingStrategy;
         private List<AttributeConverterProvider> attributeConverterProviders =
             Collections.singletonList(ConverterProviderResolver.defaultConverterProvider());
 
@@ -324,6 +448,22 @@ public final class StaticImmutableTableSchema<T, B> implements TableSchema<T> {
         public Builder<T, B> newItemBuilder(Supplier<B> newBuilderMethod, Function<B, T> buildMethod) {
             this.newBuilderSupplier = newBuilderMethod;
             this.buildItemFunction = buildMethod;
+            return this;
+        }
+
+        /**
+         * Transforms each {@link ImmutableAttribute.Builder#name(String)} while this schema is built. An omitted
+         * strategy, or a null argument, keeps those names. {@link ImmutableAttribute.Builder#storedName(String)} is
+         * stored unchanged.
+         *
+         * {@snippet :
+         * StaticImmutableTableSchema.builder(Customer.class, Customer.Builder.class)
+         *     .attributeNamingStrategy(AttributeNamingStrategies.SNAKE_CASE)
+         *     .build();
+         * }
+         */
+        public Builder<T, B> attributeNamingStrategy(AttributeNamingStrategy attributeNamingStrategy) {
+            this.attributeNamingStrategy = attributeNamingStrategy;
             return this;
         }
 
@@ -447,6 +587,7 @@ public final class StaticImmutableTableSchema<T, B> implements TableSchema<T> {
          * table schema.
          */
         public Builder<T, B> extend(StaticImmutableTableSchema<? super T, ? super B> superTableSchema) {
+            this.extendedSchemas.add(superTableSchema);
             Stream<ResolvedImmutableAttribute<T, B>> attributeStream =
                 upcastingTransformForAttributes(superTableSchema.attributeMappers);
             attributeStream.forEach(this.additionalAttributes::add);

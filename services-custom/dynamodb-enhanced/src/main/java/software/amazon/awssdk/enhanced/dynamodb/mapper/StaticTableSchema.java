@@ -112,6 +112,23 @@ public final class StaticTableSchema<T> extends WrappedTableSchema<T, StaticImmu
         }
 
         /**
+         * Transforms each {@link StaticAttribute.Builder#name(String)} while this schema is built. An omitted
+         * strategy, or a null argument, keeps those names. {@link StaticAttribute.Builder#storedName(String)} is
+         * stored unchanged.
+         *
+         * {@snippet :
+         * StaticTableSchema.builder(Customer.class)
+         *     .newItemSupplier(Customer::new)
+         *     .attributeNamingStrategy(AttributeNamingStrategies.SNAKE_CASE)
+         *     .build();
+         * }
+         */
+        public Builder<T> attributeNamingStrategy(AttributeNamingStrategy attributeNamingStrategy) {
+            this.delegateBuilder.attributeNamingStrategy(attributeNamingStrategy);
+            return this;
+        }
+
+        /**
          * A list of attributes that can be mapped between the data item object and the database record that are to
          * be associated with the schema. Will overwrite any existing attributes.
          */

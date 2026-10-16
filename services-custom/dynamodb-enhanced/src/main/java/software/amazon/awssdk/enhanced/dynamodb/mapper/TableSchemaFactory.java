@@ -28,12 +28,24 @@ public class TableSchemaFactory {
     }
 
     public static <T> TableSchema<T> fromClass(Class<T> annotatedClass, ExecutionContext context) {
+        return fromClass(annotatedClass, context, null);
+    }
+
+    public static <T> TableSchema<T> fromClass(Class<T> annotatedClass,
+                                              ExecutionContext context,
+                                              AttributeNamingStrategy strategy) {
         if (annotatedClass.getAnnotation(DynamoDbImmutable.class) != null) {
-            return ImmutableTableSchema.create(annotatedClass, context);
+            return ImmutableTableSchema.create(ImmutableTableSchemaParams.builder(annotatedClass)
+                                                                         .attributeNamingStrategy(strategy)
+                                                                         .build(),
+                                               context);
         }
 
         if (annotatedClass.getAnnotation(DynamoDbBean.class) != null) {
-            return BeanTableSchema.create(annotatedClass, context);
+            return BeanTableSchema.create(BeanTableSchemaParams.builder(annotatedClass)
+                                                               .attributeNamingStrategy(strategy)
+                                                               .build(),
+                                          context);
         }
 
         throw new IllegalArgumentException("Class does not appear to be a valid DynamoDb annotated class. [class = " +

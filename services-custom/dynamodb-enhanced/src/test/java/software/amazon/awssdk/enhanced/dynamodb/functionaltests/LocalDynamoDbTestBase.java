@@ -18,6 +18,7 @@ package software.amazon.awssdk.enhanced.dynamodb.functionaltests;
 import java.util.UUID;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.ProvisionedThroughput;
 
 public class LocalDynamoDbTestBase {
@@ -42,6 +43,13 @@ public class LocalDynamoDbTestBase {
 
     protected static LocalDynamoDb localDynamoDb() {
         return localDynamoDb;
+    }
+
+    /**
+     * A synchronous client for a test in another package. {@link #localDynamoDb()} is not visible there.
+     */
+    protected DynamoDbClient createSyncClient() {
+        return localDynamoDb().createClient();
     }
     
     protected String getConcreteTableName(String logicalTableName) {

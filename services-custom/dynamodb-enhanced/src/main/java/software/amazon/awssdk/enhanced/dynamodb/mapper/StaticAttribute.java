@@ -165,10 +165,34 @@ public final class StaticAttribute<T, R> {
         }
 
         /**
-         * The name of this attribute
+         * The name of this attribute. A schema attribute naming strategy transforms this value. Use
+         * {@link #storedName(String)} when the name must be stored unchanged, for example a key such as {@code PK}.
          */
         public Builder<T, R> name(String name) {
             this.delegateBuilder.name(name);
+            return this;
+        }
+
+        /**
+         * Stores this name unchanged. The schema attribute naming strategy does not transform it.
+         *
+         * <p>
+         * An attribute sets {@link #name(String)} or this method, not both.
+         *
+         * {@snippet :
+         * a.storedName("PK")
+         *  .getter(Customer::getId)
+         *  .setter(Customer::setId)
+         *  .tags(StaticAttributeTags.primaryPartitionKey());
+         * }
+         */
+        public Builder<T, R> storedName(String storedName) {
+            this.delegateBuilder.storedName(storedName);
+            return this;
+        }
+
+        Builder<T, R> annotationAttributeName(String annotationValue) {
+            this.delegateBuilder.annotationAttributeName(annotationValue);
             return this;
         }
 

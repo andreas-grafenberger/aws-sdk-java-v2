@@ -48,6 +48,12 @@ public final class ResolvedImmutableAttribute<T, B> {
 
     public static <T, B, R> ResolvedImmutableAttribute<T, B> create(ImmutableAttribute<T, B, R> immutableAttribute,
                                                                     AttributeConverter<R> attributeConverter) {
+        return create(immutableAttribute, attributeConverter, immutableAttribute.name());
+    }
+
+    public static <T, B, R> ResolvedImmutableAttribute<T, B> create(ImmutableAttribute<T, B, R> immutableAttribute,
+                                                                    AttributeConverter<R> attributeConverter,
+                                                                    String storedName) {
 
         AttributeType<R> attributeType = StaticAttributeType.create(attributeConverter);
         Function<T, AttributeValue> getAttributeValueWithTransform = item -> {
@@ -73,11 +79,11 @@ public final class ResolvedImmutableAttribute<T, B> {
 
         StaticTableMetadata.Builder tableMetadataBuilder = StaticTableMetadata.builder();
         immutableAttribute.tags().forEach(tag -> {
-            tag.validateType(immutableAttribute.name(), immutableAttribute.type(),
+            tag.validateType(storedName, immutableAttribute.type(),
                              attributeType.attributeValueType());
-            tag.modifyMetadata(immutableAttribute.name(), attributeType.attributeValueType()).accept(tableMetadataBuilder);
+            tag.modifyMetadata(storedName, attributeType.attributeValueType()).accept(tableMetadataBuilder);
         });
-        return new ResolvedImmutableAttribute<>(immutableAttribute.name(),
+        return new ResolvedImmutableAttribute<>(storedName,
                                                 getAttributeValueWithTransform,
                                                 updateBuilderWithTransform,
                                                 tableMetadataBuilder.build(),

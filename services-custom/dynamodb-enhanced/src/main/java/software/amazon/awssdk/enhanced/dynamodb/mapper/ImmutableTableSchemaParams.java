@@ -16,6 +16,7 @@
 package software.amazon.awssdk.enhanced.dynamodb.mapper;
 
 import java.lang.invoke.MethodHandles;
+import java.util.Optional;
 import software.amazon.awssdk.annotations.Immutable;
 import software.amazon.awssdk.annotations.SdkPublicApi;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
@@ -35,10 +36,12 @@ public final class ImmutableTableSchemaParams<T>
     implements ToCopyableBuilder<ImmutableTableSchemaParams.Builder<T>, ImmutableTableSchemaParams<T>> {
     private final Class<T> immutableClass;
     private final MethodHandles.Lookup lookup;
+    private final AttributeNamingStrategy attributeNamingStrategy;
 
     private ImmutableTableSchemaParams(BuilderImpl<T> builder) {
         this.immutableClass = builder.immutableClass;
         this.lookup = builder.lookup;
+        this.attributeNamingStrategy = builder.attributeNamingStrategy;
     }
 
     public Class<T> immutableClass() {
@@ -47,6 +50,13 @@ public final class ImmutableTableSchemaParams<T>
 
     public MethodHandles.Lookup lookup() {
         return lookup;
+    }
+
+    /**
+     * The strategy set on the builder, or empty when the builder omitted it.
+     */
+    public Optional<AttributeNamingStrategy> attributeNamingStrategy() {
+        return Optional.ofNullable(attributeNamingStrategy);
     }
 
     @Override
@@ -85,11 +95,24 @@ public final class ImmutableTableSchemaParams<T>
          * @return This builder for method chaining.
          */
         Builder<T> lookup(MethodHandles.Lookup lookup);
+
+        /**
+         * Transforms each property name while the schema is built. {@code @DynamoDbAttribute} is stored as written.
+         * An omitted strategy, or a null argument, keeps today's names.
+         *
+         * {@snippet :
+         * ImmutableTableSchemaParams.builder(Customer.class)
+         *     .attributeNamingStrategy(AttributeNamingStrategies.SNAKE_CASE)
+         *     .build();
+         * }
+         */
+        Builder<T> attributeNamingStrategy(AttributeNamingStrategy attributeNamingStrategy);
     }
 
     private static class BuilderImpl<T> implements Builder<T> {
         private Class<T> immutableClass;
         private MethodHandles.Lookup lookup;
+        private AttributeNamingStrategy attributeNamingStrategy;
 
         private BuilderImpl(Class<T> beanClass) {
             this.immutableClass = beanClass;
@@ -98,6 +121,7 @@ public final class ImmutableTableSchemaParams<T>
         private BuilderImpl(ImmutableTableSchemaParams<T> info) {
             this.immutableClass = info.immutableClass;
             this.lookup = info.lookup;
+            this.attributeNamingStrategy = info.attributeNamingStrategy;
         }
 
         public BuilderImpl<T> immutableClass(Class<T> beanClass) {
@@ -107,6 +131,11 @@ public final class ImmutableTableSchemaParams<T>
 
         public BuilderImpl<T> lookup(MethodHandles.Lookup lookup) {
             this.lookup = lookup;
+            return this;
+        }
+
+        public BuilderImpl<T> attributeNamingStrategy(AttributeNamingStrategy attributeNamingStrategy) {
+            this.attributeNamingStrategy = attributeNamingStrategy;
             return this;
         }
 
