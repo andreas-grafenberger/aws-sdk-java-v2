@@ -203,7 +203,7 @@ class CrtTransferManagerPauseAndResumeTest {
     }
 
     @Test
-    void pauseAfterRestartedResume_shouldNotKeepPausedDownloadContext() {
+    void pauseAfterRestartedResumeWrote_shouldNotKeepPausedDownloadContext() throws IOException {
         MultipartDownloadResumeContext pausedContext = new MultipartDownloadResumeContext();
         pausedContext.addCompletedPart(1);
         pausedContext.totalParts(2);
@@ -233,7 +233,9 @@ class CrtTransferManagerPauseAndResumeTest {
                                  .completedParts(Collections.singletonList(1))
                                  .build();
 
-        ResumableFileDownload newResumable = tm.resumeDownloadFile(resumable).pause();
+        FileDownload restarted = tm.resumeDownloadFile(resumable);
+        Files.write(file.toPath(), new byte[100]);
+        ResumableFileDownload newResumable = restarted.pause();
 
         assertThat(newResumable.downloadFileRequest().getObjectRequest().overrideConfiguration().get()
                                .executionAttributes().getAttribute(MULTIPART_DOWNLOAD_RESUME_CONTEXT))
@@ -301,6 +303,25 @@ class CrtTransferManagerPauseAndResumeTest {
         assertThat(actualRequest.range()).isEqualTo("bytes=1000-2000");
         assertThat(responseFileOption(actualRequest)).isEqualTo(ResponseFileOption.CREATE_OR_APPEND);
         assertThat(responseFilePath(actualRequest)).isEqualTo(file.toPath());
+    }
+
+    @Test
+    void resumeDownloadFile_objectNotModified_shouldSetIfMatchToResumedETag() {
+        Instant s3ObjectLastModified = Instant.now();
+        DownloadFileRequest downloadFileRequest = downloadFileRequest();
+        stubGetObject();
+        when(mockS3Crt.headObject(any(Consumer.class)))
+            .thenReturn(CompletableFuture.completedFuture(headObjectResponse(s3ObjectLastModified, "etag")));
+
+        tm.resumeDownloadFile(r -> r.bytesTransferred(file.length())
+                                    .downloadFileRequest(downloadFileRequest)
+                                    .fileLastModified(Instant.ofEpochMilli(file.lastModified()))
+                                    .s3ObjectEtag("etag")
+                                    .s3ObjectLastModified(s3ObjectLastModified))
+          .completionFuture()
+          .join();
+
+        assertThat(capturedGetObjectRequest().ifMatch()).isEqualTo("etag");
     }
 
     @Test

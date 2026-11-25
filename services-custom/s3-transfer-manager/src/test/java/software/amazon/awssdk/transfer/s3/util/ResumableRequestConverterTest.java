@@ -18,6 +18,7 @@ package software.amazon.awssdk.transfer.s3.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static software.amazon.awssdk.services.s3.multipart.S3MultipartExecutionAttribute.MULTIPART_DOWNLOAD_RESUME_CONTEXT;
+import static software.amazon.awssdk.transfer.s3.internal.utils.ResumableRequestConverter.hasUnresumableRange;
 import static software.amazon.awssdk.transfer.s3.internal.utils.ResumableRequestConverter.toCrtDownloadFileRequest;
 import static software.amazon.awssdk.transfer.s3.internal.utils.ResumableRequestConverter.toDownloadFileRequestAndTransformer;
 
@@ -27,10 +28,13 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.time.Instant;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import io.reactivex.Flowable;
 import org.apache.commons.lang3.RandomStringUtils;
@@ -194,6 +198,38 @@ class ResumableRequestConverterTest {
                 .contains("The ETag of the requested object in bucket (bucket) with key (key)"
                           + " has changed since the last pause. The SDK will download the S3 object from the beginning");
         }
+    }
+
+    @Test
+    void toDownloadFileAndTransformer_s3ObjectModifiedKeyWithControlCharacters_debugLogIsOneEscapedLine() {
+        GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                                                            .bucket("bucket")
+                                                            .key("key\r\nFORGED level=ERROR")
+                                                            .build();
+        DownloadFileRequest downloadFileRequest = DownloadFileRequest.builder()
+                                                                     .getObjectRequest(getObjectRequest)
+                                                                     .destination(file)
+                                                                     .build();
+        ResumableFileDownload resumableFileDownload =
+            ResumableFileDownload.builder()
+                                 .bytesTransferred(1000L)
+                                 .s3ObjectLastModified(Instant.now().minusSeconds(5))
+                                 .fileLastModified(Instant.ofEpochMilli(file.lastModified()))
+                                 .downloadFileRequest(downloadFileRequest)
+                                 .build();
+        List<String> messages;
+        try (LogCaptor logCaptor = LogCaptor.create(Level.DEBUG)) {
+            toDownloadFileRequestAndTransformer(resumableFileDownload, headObjectResponse(Instant.now()),
+                                                downloadFileRequest);
+            messages = logCaptor.loggedEvents()
+                                .stream()
+                                .map(e -> e.getMessage().getFormattedMessage())
+                                .collect(Collectors.toList());
+        }
+
+        assertThat(messages).allSatisfy(m -> assertThat(m).doesNotContain("\r", "\n"));
+        assertThat(messages).anySatisfy(m -> assertThat(m).contains(
+            "The requested object in bucket (bucket) with key (key\\r\\nFORGED level=ERROR) has been modified"));
     }
 
     @Test
@@ -382,6 +418,138 @@ class ResumableRequestConverterTest {
         assertThat(actualRequest.ifUnmodifiedSince()).isEqualTo(S3_LAST_MODIFIED);
     }
 
+    static Stream<Arguments> unresumableRangeCases() {
+        return Stream.of(Arguments.of(null, 1000L, 2000L, false),
+                         Arguments.of("bytes=0-1999", 1000L, 2000L, false),
+                         Arguments.of("bytes=0-999", 1000L, 2000L, true),
+                         Arguments.of("bytes=0-1,5-6", 0L, 2000L, true));
+    }
+
+    @ParameterizedTest(name = "range={0}, bytesTransferred={1}, contentLength={2}")
+    @MethodSource("unresumableRangeCases")
+    void hasUnresumableRange_shouldBeTrueOnlyForUnparsableOrFullyDownloadedUserRange(String range,
+                                                                                    long bytesTransferred,
+                                                                                    long contentLength,
+                                                                                    boolean expected) {
+        DownloadFileRequest downloadFileRequest = downloadFileRequest(getObjectRequest().toBuilder().range(range).build());
+
+        assertThat(hasUnresumableRange(downloadFileRequest, bytesTransferred, contentLength)).isEqualTo(expected);
+    }
+
+    @Test
+    void toDownloadFileAndTransformer_completedPartsWithoutResumeContext_shouldRestart() {
+        DownloadFileRequest downloadFileRequest = downloadFileRequest(getObjectRequest());
+
+        GetObjectRequest actualRequest =
+            toDownloadFileRequestAndTransformer(resumableFileDownloadWithCompletedParts(downloadFileRequest,
+                                                                                        Arrays.asList(1, 3)),
+                                                headObjectResponse(S3_LAST_MODIFIED), downloadFileRequest)
+                .left().getObjectRequest();
+
+        assertThat(actualRequest.range()).isNull();
+        assertThat(actualRequest.ifMatch()).isNull();
+        assertThat(actualRequest.ifUnmodifiedSince()).isEqualTo(S3_LAST_MODIFIED);
+        assertThat(MultipartDownloadUtils.multipartDownloadResumeContext(actualRequest))
+            .hasValueSatisfying(ctx -> assertThat(ctx.completedParts()).isEmpty());
+    }
+
+    @Test
+    void toDownloadFileAndTransformer_completedPartsWithEmptyResumeContext_shouldRestart() {
+        MultipartDownloadResumeContext emptyContext = new MultipartDownloadResumeContext();
+        DownloadFileRequest downloadFileRequest = downloadFileRequest(getObjectRequestWithResumeContext(emptyContext));
+
+        GetObjectRequest actualRequest =
+            toDownloadFileRequestAndTransformer(resumableFileDownloadWithCompletedParts(downloadFileRequest,
+                                                                                        Arrays.asList(1, 3)),
+                                                headObjectResponse(S3_LAST_MODIFIED), downloadFileRequest)
+                .left().getObjectRequest();
+
+        assertThat(actualRequest.range()).isNull();
+        assertThat(actualRequest.ifMatch()).isNull();
+        assertThat(MultipartDownloadUtils.multipartDownloadResumeContext(actualRequest))
+            .hasValueSatisfying(ctx -> assertThat(ctx).isNotSameAs(emptyContext)
+                                                      .satisfies(c -> assertThat(c.completedParts()).isEmpty()));
+    }
+
+    @Test
+    void toDownloadFileAndTransformer_completedPartsWithResumeContext_shouldResumeRemainingParts() {
+        GetObjectRequest getObjectRequest = getObjectRequestWithCompletedFirstPart();
+        DownloadFileRequest downloadFileRequest = downloadFileRequest(getObjectRequest);
+
+        GetObjectRequest actualRequest =
+            toDownloadFileRequestAndTransformer(resumableFileDownloadWithCompletedParts(downloadFileRequest,
+                                                                                        Collections.singletonList(1)),
+                                                headObjectResponse(S3_LAST_MODIFIED), downloadFileRequest)
+                .left().getObjectRequest();
+
+        assertThat(actualRequest.range()).isNull();
+        assertThat(actualRequest.ifMatch()).isEqualTo(ETAG_BAR);
+        assertThat(MultipartDownloadUtils.multipartDownloadResumeContext(actualRequest))
+            .containsSame(MultipartDownloadUtils.multipartDownloadResumeContext(getObjectRequest).get());
+    }
+
+    @Test
+    void toDownloadFileAndTransformer_noCompletedPartsWithoutResumeContext_shouldResumeByRange() {
+        DownloadFileRequest downloadFileRequest = downloadFileRequest(getObjectRequest());
+
+        GetObjectRequest actualRequest =
+            toDownloadFileRequestAndTransformer(resumableFileDownloadWithCompletedParts(downloadFileRequest,
+                                                                                        Collections.emptyList()),
+                                                headObjectResponse(S3_LAST_MODIFIED), downloadFileRequest)
+                .left().getObjectRequest();
+
+        assertThat(actualRequest.range()).isEqualTo("bytes=1000-2000");
+        assertThat(actualRequest.ifMatch()).isEqualTo(ETAG_BAR);
+        assertThat(MultipartDownloadUtils.multipartDownloadResumeContext(actualRequest)).isEmpty();
+    }
+
+    @Test
+    void toDownloadFileAndTransformer_completedPartsWithoutResumeContext_shouldReplaceFile() throws Exception {
+        byte[] objectContent = RandomStringUtils.randomAlphanumeric(500).getBytes(StandardCharsets.UTF_8);
+        DownloadFileRequest downloadFileRequest = downloadFileRequest(getObjectRequest());
+        AsyncResponseTransformer<GetObjectResponse, GetObjectResponse> transformer =
+            toDownloadFileRequestAndTransformer(resumableFileDownloadWithCompletedParts(downloadFileRequest,
+                                                                                        Arrays.asList(1, 3)),
+                                                headObjectResponse(S3_LAST_MODIFIED), downloadFileRequest)
+                .right();
+        CompletableFuture<GetObjectResponse> future = transformer.prepare();
+        transformer.onResponse(GetObjectResponse.builder().build());
+        transformer.onStream(SdkPublisher.adapt(Flowable.just(ByteBuffer.wrap(objectContent))));
+        future.get(5, TimeUnit.SECONDS);
+
+        assertThat(file).hasBinaryContent(objectContent);
+    }
+
+    static Stream<Arguments> crtCases() {
+        GetObjectRequest withUserIfMatch = getObjectRequest().toBuilder().ifMatch("*").build();
+        GetObjectRequest withUnresumableRange = getObjectRequest().toBuilder().range("bytes=0-1,5-6").build();
+        return Stream.of(
+            Arguments.of("range resume", getObjectRequest(), false, ETAG_BAR, ETAG_BAR),
+            Arguments.of("range resume, user If-Match", withUserIfMatch, false, ETAG_BAR, ETAG_BAR),
+            Arguments.of("range resume, no token ETag", getObjectRequest(), false, null, null),
+            Arguments.of("range resume, no token ETag, user If-Match", withUserIfMatch, false, null, "*"),
+            Arguments.of("restart", getObjectRequest(), true, ETAG_BAR, null),
+            Arguments.of("unresumable range", withUnresumableRange, false, ETAG_BAR, null)
+        );
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("crtCases")
+    void toCrtDownloadFileRequest_shouldSetIfMatchOnlyOnRangeResume(String description,
+                                                                    GetObjectRequest getObjectRequest,
+                                                                    boolean restartFromBeginning,
+                                                                    String s3ObjectEtag,
+                                                                    String expectedIfMatch) {
+        DownloadFileRequest downloadFileRequest = downloadFileRequest(getObjectRequest);
+
+        GetObjectRequest actualRequest =
+            toCrtDownloadFileRequest(resumableFileDownload(downloadFileRequest, S3_LAST_MODIFIED, s3ObjectEtag),
+                                     headObjectResponse(S3_LAST_MODIFIED), downloadFileRequest, restartFromBeginning)
+                .getObjectRequest();
+
+        assertThat(actualRequest.ifMatch()).isEqualTo(expectedIfMatch);
+    }
+
     @Test
     void toCrtDownloadFileRequest_restart_shouldUseNewResumeContext() {
         GetObjectRequest getObjectRequest = getObjectRequestWithCompletedFirstPart();
@@ -447,6 +615,12 @@ class ResumableRequestConverterTest {
                                     .s3ObjectEtag(s3ObjectEtag)
                                     .downloadFileRequest(downloadFileRequest)
                                     .build();
+    }
+
+    private ResumableFileDownload resumableFileDownloadWithCompletedParts(DownloadFileRequest downloadFileRequest,
+                                                                          List<Integer> completedParts) {
+        return resumableFileDownload(downloadFileRequest, S3_LAST_MODIFIED, ETAG_BAR)
+            .copy(b -> b.completedParts(completedParts));
     }
 
     private static GetObjectRequest getObjectRequest() {

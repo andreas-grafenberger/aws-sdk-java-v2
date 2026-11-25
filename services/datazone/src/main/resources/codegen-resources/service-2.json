@@ -433,7 +433,7 @@
         {"shape":"ValidationException"},
         {"shape":"UnauthorizedException"}
       ],
-      "documentation":"<p>Creates a new user-defined designation with a Cedar permit policy. The designation defines a named role that can be assigned to project members.</p>"
+      "documentation":"<p>Creates a new user-defined designation with a Cedar permit policy. The designation defines a named role that can be assigned to project members through <code>CreateProjectMembership</code> or granted through <code>AddPolicyGrant</code>.</p>"
     },
     "CreateDomain":{
       "name":"CreateDomain",
@@ -1033,7 +1033,7 @@
         {"shape":"ValidationException"},
         {"shape":"UnauthorizedException"}
       ],
-      "documentation":"<p>Deletes a designation. Managed designations cannot be deleted. This operation is idempotent.</p>",
+      "documentation":"<p>Deletes a user-created designation. Managed designations cannot be deleted. The call fails if the designation has <code>deletionProtection</code> enabled or if any project member still holds it. This operation is idempotent.</p>",
       "idempotent":true
     },
     "DeleteDomain":{
@@ -1699,7 +1699,7 @@
         {"shape":"ValidationException"},
         {"shape":"UnauthorizedException"}
       ],
-      "documentation":"<p>Gets the details of a designation, including its Cedar policy.</p>",
+      "documentation":"<p>Gets the details of a designation, including its Cedar permit policy. Returns the full designation record for both system-managed and user-created designations.</p>",
       "readonly":true
     },
     "GetDomain":{
@@ -2504,7 +2504,7 @@
         {"shape":"ValidationException"},
         {"shape":"UnauthorizedException"}
       ],
-      "documentation":"<p>Lists the designations in a domain. Returns system-managed designations first, followed by user-created designations sorted alphabetically by name.</p>",
+      "documentation":"<p>Lists the designations in a domain. The response returns system-managed designations first, followed by user-created designations in alphabetical order by name. Results are paginated. Use <code>nextToken</code> to retrieve additional pages of results.</p>",
       "readonly":true
     },
     "ListDomainUnitsForParent":{
@@ -3550,6 +3550,28 @@
       "documentation":"<p>Updates an asset filter.</p> <p>Prerequisites:</p> <ul> <li> <p>The domain, asset, and asset filter identifier must all exist. </p> </li> <li> <p>The asset must contain the columns being referenced in the update.</p> </li> <li> <p>If applying a row filter, ensure the column referenced in the expression exists in the asset schema.</p> </li> </ul>",
       "idempotent":true
     },
+    "UpdateAssetOwner":{
+      "name":"UpdateAssetOwner",
+      "http":{
+        "method":"PATCH",
+        "requestUri":"/v2/domains/{domainIdentifier}/assets/{identifier}",
+        "responseCode":202
+      },
+      "input":{"shape":"UpdateAssetOwnerInput"},
+      "output":{"shape":"UpdateAssetOwnerOutput"},
+      "errors":[
+        {"shape":"InternalServerException"},
+        {"shape":"ResourceNotFoundException"},
+        {"shape":"AccessDeniedException"},
+        {"shape":"ThrottlingException"},
+        {"shape":"ServiceQuotaExceededException"},
+        {"shape":"ConflictException"},
+        {"shape":"ValidationException"},
+        {"shape":"UnauthorizedException"}
+      ],
+      "documentation":"<p>Transfers the ownership of an asset to another project in the same Amazon DataZone domain. The transfer changes the asset's owning project and moves its published listing, subscriptions, and subscription grants to the target project.</p> <p>The transfer runs asynchronously, and the operation returns HTTP status code 202. To follow the transfer, call <code>GetAsset</code> and check <code>ownershipTransfer.status</code> until it is <code>SUCCEEDED</code> or <code>FAILED</code>.</p> <p>You need to be an owner of the project that currently owns the asset. You can transfer an asset from the domain's administration project to any project. You can also transfer an asset from any project to the administration project.</p> <p>An asset can have only one ownership transfer in progress at a time. While a transfer is in progress, requests that change the asset or its listing fail with a <code>ConflictException</code>.</p>",
+      "idempotent":true
+    },
     "UpdateConnection":{
       "name":"UpdateConnection",
       "http":{
@@ -3612,7 +3634,7 @@
         {"shape":"ValidationException"},
         {"shape":"UnauthorizedException"}
       ],
-      "documentation":"<p>Updates an existing designation. Managed designations cannot be modified.</p>"
+      "documentation":"<p>Updates an existing user-created designation. Managed designations cannot be modified. Omit a field to leave its current value unchanged.</p>"
     },
     "UpdateDomain":{
       "name":"UpdateDomain",
@@ -5020,6 +5042,46 @@
       "min":1,
       "sensitive":true
     },
+    "AssetOwnershipTransfer":{
+      "type":"structure",
+      "required":[
+        "status",
+        "sourceProjectId",
+        "targetProjectId"
+      ],
+      "members":{
+        "status":{
+          "shape":"AssetOwnershipTransferStatus",
+          "documentation":"<p>The status of the ownership transfer. Valid values:</p> <ul> <li> <p> <code>IN_PROGRESS</code> — The transfer is in progress. Requests that change the asset or its listing fail until the transfer completes.</p> </li> <li> <p> <code>SUCCEEDED</code> — The transfer completed. The target project owns the asset, its listing, and the subscriptions to the asset.</p> </li> <li> <p> <code>FAILED</code> — The transfer didn't complete, and the service rolled back its changes. The source project owns the asset.</p> </li> </ul>"
+        },
+        "sourceProjectId":{
+          "shape":"ProjectId",
+          "documentation":"<p>The ID of the project that owned the asset when the transfer started.</p>"
+        },
+        "targetProjectId":{
+          "shape":"ProjectId",
+          "documentation":"<p>The ID of the project that the asset is transferred to.</p>"
+        },
+        "startedAt":{
+          "shape":"Timestamp",
+          "documentation":"<p>The timestamp of when the transfer started.</p>"
+        },
+        "updatedAt":{
+          "shape":"Timestamp",
+          "documentation":"<p>The timestamp of when the status of the transfer was last updated.</p>"
+        }
+      },
+      "documentation":"<p>The details of an asset ownership transfer.</p>"
+    },
+    "AssetOwnershipTransferStatus":{
+      "type":"string",
+      "documentation":"<p>The state of an asset ownership transfer, which indicates whether the transfer is in progress, succeeded, or failed.</p>",
+      "enum":[
+        "IN_PROGRESS",
+        "SUCCEEDED",
+        "FAILED"
+      ]
+    },
     "AssetPermission":{
       "type":"structure",
       "required":[
@@ -5478,6 +5540,10 @@
         "basicAuthenticationCredentials":{
           "shape":"BasicAuthenticationCredentials",
           "documentation":"<p>The basic authentication credentials of a connection.</p>"
+        },
+        "oAuth2Properties":{
+          "shape":"OAuth2PropertiesPatch",
+          "documentation":"<p>The OAuth2 properties, such as the client application, grant type, and token URL, that you want to update for a connection. Only the properties that you specify are updated; the connection keeps its existing values for the properties that you omit.</p>"
         }
       },
       "documentation":"<p>The authentication configuration patch of a connection. </p>"
@@ -6436,7 +6502,9 @@
         "GIT",
         "ICEBERGRESTCATALOG",
         "SNOWFLAKEICEBERGRESTCATALOG",
-        "DATABRICKSICEBERGRESTCATALOG"
+        "DATABRICKSICEBERGRESTCATALOG",
+        "WORKDAYICEBERGRESTCATALOG",
+        "WORKDAYLDQ"
       ]
     },
     "ConnectivityProperties":{
@@ -7666,11 +7734,11 @@
         },
         "policy":{
           "shape":"CedarDesignationPolicy",
-          "documentation":"<p>The Cedar permit policy that defines what actions holders of this designation are allowed to perform.</p>"
+          "documentation":"<p>The Cedar permit policy that defines the actions holders of this designation are allowed to perform.</p>"
         },
         "deletionProtection":{
           "shape":"Boolean",
-          "documentation":"<p>Whether deletion protection is enabled for this designation. Defaults to true when omitted.</p>"
+          "documentation":"<p>Specifies whether deletion protection is enabled for this designation. Defaults to <code>true</code> when omitted. When enabled, <code>DeleteDesignation</code> is rejected until protection is disabled through <code>UpdateDesignation</code>.</p>"
         }
       }
     },
@@ -7704,15 +7772,15 @@
         },
         "designationType":{
           "shape":"DesignationType",
-          "documentation":"<p>The classification of this designation. MANAGED designations are system-defined and cannot be modified or deleted.</p>"
+          "documentation":"<p>The classification of this designation. Valid values:</p> <ul> <li> <p> <code>MANAGED</code> — System-defined designations that cannot be modified or deleted.</p> </li> <li> <p> <code>USER_CREATED</code> — Designations created through <code>CreateDesignation</code>.</p> </li> </ul>"
         },
         "policy":{
           "shape":"CedarDesignationPolicy",
-          "documentation":"<p>The Cedar permit policy that governs what actions holders of this designation are allowed to perform.</p>"
+          "documentation":"<p>The Cedar permit policy that governs the actions holders of this designation are allowed to perform.</p>"
         },
         "deletionProtection":{
           "shape":"Boolean",
-          "documentation":"<p>Whether deletion protection is enabled for this designation. When true, DeleteDesignation is rejected until protection is disabled via UpdateDesignation.</p>"
+          "documentation":"<p>Specifies whether deletion protection is enabled for this designation. When <code>true</code>, <code>DeleteDesignation</code> is rejected until protection is disabled through <code>UpdateDesignation</code>.</p>"
         },
         "createdBy":{
           "shape":"CreatedBy",
@@ -11561,11 +11629,11 @@
         },
         "designationType":{
           "shape":"DesignationType",
-          "documentation":"<p>The classification of this designation.</p>"
+          "documentation":"<p>The classification of this designation. Valid values:</p> <ul> <li> <p> <code>MANAGED</code> — System-defined designation.</p> </li> <li> <p> <code>USER_CREATED</code> — User-created designation.</p> </li> </ul>"
         },
         "deletionProtection":{
           "shape":"Boolean",
-          "documentation":"<p>Whether deletion protection is enabled for this designation.</p>"
+          "documentation":"<p>Specifies whether deletion protection is enabled for this designation. When <code>true</code>, <code>DeleteDesignation</code> is rejected until protection is disabled through <code>UpdateDesignation</code>.</p>"
         },
         "createdBy":{
           "shape":"CreatedBy",
@@ -11580,7 +11648,7 @@
           "documentation":"<p>The date and time when the designation was last updated.</p>"
         }
       },
-      "documentation":"<p>Summary representation of a designation returned by list operations.</p>"
+      "documentation":"<p>The summary representation of a designation returned by <code>ListDesignations</code>. The summary omits the Cedar permit policy. Call <code>GetDesignation</code> to retrieve the full designation record including the policy.</p>"
     },
     "DesignationType":{
       "type":"string",
@@ -12295,6 +12363,10 @@
         "environmentId":{
           "shape":"EnvironmentId",
           "documentation":"<p>The ID of the environment.</p>"
+        },
+        "environmentBlueprintId":{
+          "shape":"EnvironmentBlueprintId",
+          "documentation":"<p>The ID of the environment blueprint.</p>"
         },
         "environmentResolvedAccount":{
           "shape":"EnvironmentResolvedAccount",
@@ -13282,6 +13354,10 @@
         "latestTimeSeriesDataPointFormsOutput":{
           "shape":"TimeSeriesDataPointSummaryFormOutputList",
           "documentation":"<p>The latest data point that was imported into the time series form for the asset. </p>"
+        },
+        "ownershipTransfer":{
+          "shape":"AssetOwnershipTransfer",
+          "documentation":"<p>The most recent ownership transfer of the asset. The response omits this member if the asset has never had an ownership transfer.</p>"
         }
       }
     },
@@ -13878,15 +13954,15 @@
         },
         "designationType":{
           "shape":"DesignationType",
-          "documentation":"<p>The classification of this designation. MANAGED designations are system-defined and cannot be modified or deleted.</p>"
+          "documentation":"<p>The classification of this designation. Valid values:</p> <ul> <li> <p> <code>MANAGED</code> — System-defined designations that cannot be modified or deleted.</p> </li> <li> <p> <code>USER_CREATED</code> — Designations created through <code>CreateDesignation</code>.</p> </li> </ul>"
         },
         "policy":{
           "shape":"CedarDesignationPolicy",
-          "documentation":"<p>The Cedar permit policy that governs what actions holders of this designation are allowed to perform.</p>"
+          "documentation":"<p>The Cedar permit policy that governs the actions holders of this designation are allowed to perform.</p>"
         },
         "deletionProtection":{
           "shape":"Boolean",
-          "documentation":"<p>Whether deletion protection is enabled for this designation. When true, DeleteDesignation is rejected until protection is disabled via UpdateDesignation.</p>"
+          "documentation":"<p>Specifies whether deletion protection is enabled for this designation. When <code>true</code>, <code>DeleteDesignation</code> is rejected until protection is disabled through <code>UpdateDesignation</code>.</p>"
         },
         "createdBy":{
           "shape":"CreatedBy",
@@ -16976,7 +17052,9 @@
         "VERTICA",
         "ICEBERGRESTCATALOG",
         "SNOWFLAKEICEBERGRESTCATALOG",
-        "DATABRICKSICEBERGRESTCATALOG"
+        "DATABRICKSICEBERGRESTCATALOG",
+        "WORKDAYICEBERGRESTCATALOG",
+        "WORKDAYLDQ"
       ]
     },
     "GlueOAuth2Credentials":{
@@ -21473,6 +21551,34 @@
       },
       "documentation":"<p>The OAuth2 properties.</p>"
     },
+    "OAuth2PropertiesPatch":{
+      "type":"structure",
+      "members":{
+        "oAuth2GrantType":{
+          "shape":"OAuth2GrantType",
+          "documentation":"<p>The OAuth2 grant type of the OAuth2 properties to update.</p>"
+        },
+        "oAuth2ClientApplication":{
+          "shape":"OAuth2ClientApplication",
+          "documentation":"<p>The OAuth2 client application of the OAuth2 properties to update.</p>"
+        },
+        "tokenUrl":{
+          "shape":"OAuth2PropertiesPatchTokenUrlString",
+          "documentation":"<p>The OAuth2 token URL of the OAuth2 properties to update.</p>"
+        },
+        "tokenUrlParametersMap":{
+          "shape":"TokenUrlParametersMap",
+          "documentation":"<p>The OAuth2 token URL parameter map of the OAuth2 properties to update, for example the scope. If you specify an empty map, the existing parameters are kept.</p>"
+        }
+      },
+      "documentation":"<p>Contains the OAuth2 properties, such as the client application, grant type, and token URL, that you want to update for a connection.</p>"
+    },
+    "OAuth2PropertiesPatchTokenUrlString":{
+      "type":"string",
+      "max":256,
+      "min":0,
+      "pattern":"(https?)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-a-zA-Z0-9+&@#/%=~_|]"
+    },
     "OAuth2PropertiesTokenUrlString":{
       "type":"string",
       "max":256,
@@ -22125,6 +22231,10 @@
         }
       },
       "documentation":"<p>The project policy grant principal.</p>"
+    },
+    "ProjectProfileAction":{
+      "type":"string",
+      "enum":["DISASSOCIATE"]
     },
     "ProjectProfileId":{
       "type":"string",
@@ -27248,6 +27358,59 @@
         }
       }
     },
+    "UpdateAssetOwnerInput":{
+      "type":"structure",
+      "required":[
+        "domainIdentifier",
+        "identifier",
+        "targetProjectIdentifier"
+      ],
+      "members":{
+        "domainIdentifier":{
+          "shape":"DomainId",
+          "documentation":"<p>The ID of the Amazon DataZone domain that contains the asset.</p>",
+          "location":"uri",
+          "locationName":"domainIdentifier"
+        },
+        "identifier":{
+          "shape":"AssetIdentifier",
+          "documentation":"<p>The ID of the asset whose ownership is transferred.</p>",
+          "location":"uri",
+          "locationName":"identifier"
+        },
+        "targetProjectIdentifier":{
+          "shape":"ProjectId",
+          "documentation":"<p>The ID of the project that the asset is transferred to. The project must be in the same domain and must be different from the project that currently owns the asset.</p> <p>If the domain's administration project owns the asset, the target can be any project. Otherwise, the target must be the administration project.</p>"
+        },
+        "clientToken":{
+          "shape":"ClientToken",
+          "documentation":"<p>A unique, case-sensitive identifier to ensure that the operation completes no more than one time. If this token matches a previous request while its transfer is in progress, the service returns that transfer and doesn't start a new one. This field is automatically populated if not provided.</p>",
+          "idempotencyToken":true
+        }
+      }
+    },
+    "UpdateAssetOwnerOutput":{
+      "type":"structure",
+      "required":[
+        "id",
+        "revision",
+        "ownershipTransfer"
+      ],
+      "members":{
+        "id":{
+          "shape":"AssetId",
+          "documentation":"<p>The ID of the asset.</p>"
+        },
+        "revision":{
+          "shape":"Revision",
+          "documentation":"<p>The revision of the asset that was created when the transfer started.</p>"
+        },
+        "ownershipTransfer":{
+          "shape":"AssetOwnershipTransfer",
+          "documentation":"<p>The state of the ownership transfer that the request started.</p>"
+        }
+      }
+    },
     "UpdateConnectionInput":{
       "type":"structure",
       "required":[
@@ -27541,11 +27704,11 @@
         },
         "policy":{
           "shape":"CedarDesignationPolicy",
-          "documentation":"<p>The updated Cedar permit policy.</p>"
+          "documentation":"<p>The updated Cedar permit policy. Omit to keep the existing policy.</p>"
         },
         "deletionProtection":{
           "shape":"Boolean",
-          "documentation":"<p>Whether deletion protection is enabled for this designation. Omit to keep the existing value.</p>"
+          "documentation":"<p>Specifies whether deletion protection is enabled for this designation. Omit to keep the existing value.</p>"
         }
       }
     },
@@ -27579,15 +27742,15 @@
         },
         "designationType":{
           "shape":"DesignationType",
-          "documentation":"<p>The classification of this designation. MANAGED designations are system-defined and cannot be modified or deleted.</p>"
+          "documentation":"<p>The classification of this designation. Valid values:</p> <ul> <li> <p> <code>MANAGED</code> — System-defined designations that cannot be modified or deleted.</p> </li> <li> <p> <code>USER_CREATED</code> — Designations created through <code>CreateDesignation</code>.</p> </li> </ul>"
         },
         "policy":{
           "shape":"CedarDesignationPolicy",
-          "documentation":"<p>The Cedar permit policy that governs what actions holders of this designation are allowed to perform.</p>"
+          "documentation":"<p>The Cedar permit policy that governs the actions holders of this designation are allowed to perform.</p>"
         },
         "deletionProtection":{
           "shape":"Boolean",
-          "documentation":"<p>Whether deletion protection is enabled for this designation. When true, DeleteDesignation is rejected until protection is disabled via UpdateDesignation.</p>"
+          "documentation":"<p>Specifies whether deletion protection is enabled for this designation. When <code>true</code>, <code>DeleteDesignation</code> is rejected until protection is disabled through <code>UpdateDesignation</code>.</p>"
         },
         "createdBy":{
           "shape":"CreatedBy",
@@ -28609,6 +28772,10 @@
         "projectProfileVersion":{
           "shape":"String",
           "documentation":"<p>The project profile version to which the project should be updated. You can only specify the following string for this parameter: <code>latest</code>.</p>"
+        },
+        "projectProfileAction":{
+          "shape":"ProjectProfileAction",
+          "documentation":"<p>The action to perform on the project profile of the project. Specify <code>DISASSOCIATE</code> to disassociate the project from its project profile.</p>"
         }
       }
     },

@@ -973,7 +973,7 @@
           "documentation": "The reservation could not be deleted because it is currently active."
         }
       ],
-      "documentation": "Delete an expired reservation."
+      "documentation": "Delete an expired reservation, or cancel an active reservation during the calendar month (UTC) in which you purchased it. You can't cancel an active reservation that you purchased in an earlier month, including one that renewed automatically. You also can't cancel an active reservation during the last hour of the month, from 23:00 UTC on the last day of the month."
     },
     "DeleteSchedule": {
       "name": "DeleteSchedule",
@@ -7345,6 +7345,10 @@
         "SmartSubtitleSourceSettings": {
           "shape": "SmartSubtitleSourceSettings",
           "locationName": "smartSubtitleSourceSettings"
+        },
+        "WebvttSourceSettings": {
+          "shape": "WebvttSourceSettings",
+          "locationName": "webvttSourceSettings"
         }
       },
       "documentation": "Caption Selector Settings"
@@ -7485,6 +7489,11 @@
           "shape": "DescribeInferenceSettings",
           "locationName": "inferenceSettings",
           "documentation": "Include this setting to include Elemental Inference features in this channel."
+        },
+        "JpegXsInputSpecification": {
+          "shape": "JpegXsInputSpecification",
+          "locationName": "jpegXsInputSpecification",
+          "documentation": "Specification of JPEG XS inputs for this channel"
         }
       },
       "documentation": "Placeholder documentation for Channel"
@@ -7651,6 +7660,11 @@
           "shape": "DescribeInferenceSettings",
           "locationName": "inferenceSettings",
           "documentation": "Include this setting to include Elemental Inference features in this channel."
+        },
+        "JpegXsInputSpecification": {
+          "shape": "JpegXsInputSpecification",
+          "locationName": "jpegXsInputSpecification",
+          "documentation": "Specification of JPEG XS inputs for this channel"
         }
       },
       "documentation": "Placeholder documentation for ChannelSummary"
@@ -7841,6 +7855,11 @@
           "shape": "InferenceSettings",
           "locationName": "inferenceSettings",
           "documentation": "Include this setting to include Elemental Inference features in this channel."
+        },
+        "JpegXsInputSpecification": {
+          "shape": "JpegXsInputSpecification",
+          "locationName": "jpegXsInputSpecification",
+          "documentation": "Specification of JPEG XS inputs for this channel"
         }
       },
       "documentation": "Placeholder documentation for CreateChannel"
@@ -7946,6 +7965,11 @@
           "shape": "InferenceSettings",
           "locationName": "inferenceSettings",
           "documentation": "Include this setting to include Elemental Inference features in this channel."
+        },
+        "JpegXsInputSpecification": {
+          "shape": "JpegXsInputSpecification",
+          "locationName": "jpegXsInputSpecification",
+          "documentation": "Specification of JPEG XS inputs for this channel"
         }
       },
       "documentation": "A request to create a channel"
@@ -8594,6 +8618,11 @@
           "shape": "DescribeInferenceSettings",
           "locationName": "inferenceSettings",
           "documentation": "Include this setting to include Elemental Inference features in this channel."
+        },
+        "JpegXsInputSpecification": {
+          "shape": "JpegXsInputSpecification",
+          "locationName": "jpegXsInputSpecification",
+          "documentation": "Specification of JPEG XS inputs for this channel"
         }
       },
       "documentation": "Placeholder documentation for DeleteChannelResponse"
@@ -9074,6 +9103,11 @@
           "shape": "DescribeInferenceSettings",
           "locationName": "inferenceSettings",
           "documentation": "Include this setting to include Elemental Inference features in this channel."
+        },
+        "JpegXsInputSpecification": {
+          "shape": "JpegXsInputSpecification",
+          "locationName": "jpegXsInputSpecification",
+          "documentation": "Specification of JPEG XS inputs for this channel"
         }
       },
       "documentation": "Placeholder documentation for DescribeChannelResponse"
@@ -10499,6 +10533,16 @@
           "shape": "EmbeddedDestinationStyleControl",
           "locationName": "styleControl",
           "documentation": "Controls the source of position and style information for the output captions.\n\n- \"passthrough\": Carry the caption position and style from the source captions. When the source captions are embedded, SCTE-20, or ancillary, the position and style are preserved exactly. When the source captions are another format, the position and any supported style are carried over.\n- \"manual\": Applies the specified styling and positioning. All other styling and positioning is given default values."
+        },
+        "CaptionServiceChannel": {
+          "shape": "__integerMin1Max63",
+          "locationName": "captionServiceChannel",
+          "documentation": "CC Channel / Service number for 608/708 encode mode. Serves as both the 608 CC channel\nand the 708 service number (e.g., 1 = CC1 + Service 1). Only takes effect when the source\nis non-embedded (teletext, smart captions, etc.) — ignored in passthrough mode.\n\nRange 1-4: valid for embedded608Only, embedded708Only, or embedded608And708.\nRange 5-63: valid for embedded708Only."
+        },
+        "EmbeddedMode": {
+          "shape": "EmbeddedModeType",
+          "locationName": "embeddedMode",
+          "documentation": "Controls what the encoder generates when in encode mode (non-embedded source → embedded destination).\nIgnored in passthrough mode (embedded source → embedded destination).\n\n- \"embedded608Only\": Generate CEA-608 CC pairs only (channel must be 1-4)\n- \"embedded708Only\": Generate CEA-708 service blocks only (channel 1-63)\n- \"embedded608And708\": Generate both 608 CC pairs and 708 service blocks (channel 1-4 gets both, 5-63 gets 708 only)"
         }
       },
       "documentation": "Embedded Destination Settings"
@@ -11123,6 +11167,18 @@
         "BandwidthReductionFilterSettings": {
           "shape": "BandwidthReductionFilterSettings",
           "locationName": "bandwidthReductionFilterSettings"
+        },
+        "AutoFilterSettings": {
+          "shape": "AutoFilterSettings",
+          "locationName": "autoFilterSettings"
+        },
+        "NoneFilterSettings": {
+          "shape": "NoneFilterSettings",
+          "locationName": "noneFilterSettings"
+        },
+        "PerceptualFilterSettings": {
+          "shape": "PerceptualFilterSettings",
+          "locationName": "perceptualFilterSettings"
         }
       },
       "documentation": "H264 Filter Settings"
@@ -11475,6 +11531,11 @@
           "shape": "__integerMin0",
           "locationName": "minBitrate",
           "documentation": "Used for QVBR rate control mode only.\nOptional.\nEnter a minimum bitrate if you want to keep the output bitrate about a threshold, in order to prevent the downstream system from de-allocating network bandwidth for this output."
+        },
+        "AllowExplicitWeightedPrediction": {
+          "shape": "H264AllowExplicitWeightedPrediction",
+          "locationName": "allowExplicitWeightedPrediction",
+          "documentation": "Specifies whether the encoder may apply explicit weighted prediction (EWP), an H.264 coding tool that can improve compression. EWP applies a scaling factor and offset to reference frames, which helps when brightness changes between frames, such as during a fade. When this setting is enabled, the encoder decides whether to apply EWP based on the output's other codec settings, such as profile and quality level. We recommend that you keep the default, enabled. When disabled, the encoder never applies EWP."
         }
       },
       "documentation": "H264 Settings"
@@ -11588,6 +11649,18 @@
         "BandwidthReductionFilterSettings": {
           "shape": "BandwidthReductionFilterSettings",
           "locationName": "bandwidthReductionFilterSettings"
+        },
+        "AutoFilterSettings": {
+          "shape": "AutoFilterSettings",
+          "locationName": "autoFilterSettings"
+        },
+        "NoneFilterSettings": {
+          "shape": "NoneFilterSettings",
+          "locationName": "noneFilterSettings"
+        },
+        "PerceptualFilterSettings": {
+          "shape": "PerceptualFilterSettings",
+          "locationName": "perceptualFilterSettings"
         }
       },
       "documentation": "H265 Filter Settings"
@@ -12880,7 +12953,8 @@
       "enum": [
         "MPEG2",
         "AVC",
-        "HEVC"
+        "HEVC",
+        "JPEGXS"
       ]
     },
     "InputDeblockFilter": {
@@ -17161,7 +17235,8 @@
         "HEVC",
         "AUDIO",
         "LINK",
-        "AV1"
+        "AV1",
+        "JPEGXS"
       ]
     },
     "ReservationMaximumBitrate": {
@@ -17170,7 +17245,8 @@
       "enum": [
         "MAX_10_MBPS",
         "MAX_20_MBPS",
-        "MAX_50_MBPS"
+        "MAX_50_MBPS",
+        "MAX_500_MBPS"
       ]
     },
     "ReservationMaximumFramerate": {
@@ -18184,6 +18260,11 @@
           "shape": "DescribeInferenceSettings",
           "locationName": "inferenceSettings",
           "documentation": "Include this setting to include Elemental Inference features in this channel."
+        },
+        "JpegXsInputSpecification": {
+          "shape": "JpegXsInputSpecification",
+          "locationName": "jpegXsInputSpecification",
+          "documentation": "Specification of JPEG XS inputs for this channel"
         }
       },
       "documentation": "Placeholder documentation for StartChannelResponse"
@@ -18623,6 +18704,11 @@
           "shape": "DescribeInferenceSettings",
           "locationName": "inferenceSettings",
           "documentation": "Include this setting to include Elemental Inference features in this channel."
+        },
+        "JpegXsInputSpecification": {
+          "shape": "JpegXsInputSpecification",
+          "locationName": "jpegXsInputSpecification",
+          "documentation": "Specification of JPEG XS inputs for this channel"
         }
       },
       "documentation": "Placeholder documentation for StopChannelResponse"
@@ -19319,6 +19405,11 @@
           "shape": "SpecialRouterSettings",
           "locationName": "specialRouterSettings",
           "documentation": "When using MediaConnect Router as the source of a MediaLive input there's a special handoff that occurs when a router output\nis created. This group of settings is set on your behalf by the MediaConnect Router service using this set of settings. This\nsetting object can only by used by that service."
+        },
+        "JpegXsInputSpecification": {
+          "shape": "JpegXsInputSpecification",
+          "locationName": "jpegXsInputSpecification",
+          "documentation": "Specification of JPEG XS inputs for this channel"
         }
       },
       "documentation": "Placeholder documentation for UpdateChannel"
@@ -19464,6 +19555,11 @@
           "shape": "SpecialRouterSettings",
           "locationName": "specialRouterSettings",
           "documentation": "When using MediaConnect Router as the source of a MediaLive input there's a special handoff that occurs when a router output\nis created. This group of settings is set on your behalf by the MediaConnect Router service using this set of settings. This\nsetting object can only by used by that service."
+        },
+        "JpegXsInputSpecification": {
+          "shape": "JpegXsInputSpecification",
+          "locationName": "jpegXsInputSpecification",
+          "documentation": "Specification of JPEG XS inputs for this channel"
         }
       },
       "documentation": "A request to update a channel.",
@@ -20350,7 +20446,7 @@
         "StyleControl": {
           "shape": "WebvttDestinationStyleControl",
           "locationName": "styleControl",
-          "documentation": "Controls whether the color and position of the source captions is passed through to the WebVTT output captions.  PASSTHROUGH - Valid only if the source captions are EMBEDDED, TELETEXT, or SMART SUBTITLES.  NO_STYLE_DATA - Don't pass through the style. The output captions will not contain any font styling information. MANUAL - Applies the specified styling and positioning. All other styling and positioning is given default values."
+          "documentation": "Controls whether the color and position of the source captions is passed through to the WebVTT output captions.  PASSTHROUGH - Valid only if the source captions are EMBEDDED, TELETEXT, SMART SUBTITLES, or WEBVTT.  NO_STYLE_DATA - Don't pass through the style. The output captions will not contain any font styling information. MANUAL - Applies the specified styling and positioning. All other styling and positioning is given default values."
         },
         "Position": {
           "shape": "TextCaptionPositionSettings",
@@ -20400,10 +20496,6 @@
     "__doubleMin1Max65535": {
       "type": "double",
       "documentation": "Placeholder documentation for __doubleMin1Max65535"
-    },
-    "__doubleMin250Max5000": {
-      "type": "double",
-      "documentation": "Placeholder documentation for __doubleMin250Max5000"
     },
     "__doubleMin32Max46": {
       "type": "double",
@@ -21336,6 +21428,11 @@
           "shape": "DescribeInferenceSettings",
           "locationName": "inferenceSettings",
           "documentation": "Include this setting to include Elemental Inference features in this channel."
+        },
+        "JpegXsInputSpecification": {
+          "shape": "JpegXsInputSpecification",
+          "locationName": "jpegXsInputSpecification",
+          "documentation": "Specification of JPEG XS inputs for this channel"
         }
       },
       "documentation": "Placeholder documentation for RestartChannelPipelinesResponse"
@@ -26245,6 +26342,11 @@
           "shape": "Av1BitDepth",
           "locationName": "bitDepth",
           "documentation": "Specifies the bit depth for the output encode. Choose a value. Or leave the field empty to use the default, which is 8 bit."
+        },
+        "FilterSettings": {
+          "shape": "Av1FilterSettings",
+          "locationName": "filterSettings",
+          "documentation": "Optional filters that you can apply to an encode."
         }
       },
       "documentation": "Av1 Settings",
@@ -28039,6 +28141,16 @@
           "shape": "__string",
           "locationName": "url",
           "documentation": "This represents the customer's source URL where multicast stream is pulled from."
+        },
+        "SecondarySourceIp": {
+          "shape": "__string",
+          "locationName": "secondarySourceIp",
+          "documentation": "This represents the ip address of the device sending the secondary multicast stream."
+        },
+        "SecondaryUrl": {
+          "shape": "__string",
+          "locationName": "secondaryUrl",
+          "documentation": "This represents the customer's secondary source URL where the redundant multicast stream (SMPTE 2022-7) is pulled from."
         }
       },
       "documentation": "Pair of multicast url and source ip address (optional) that make up a multicast source.",
@@ -28058,6 +28170,16 @@
           "shape": "__string",
           "locationName": "url",
           "documentation": "This represents the customer's source URL where multicast stream is pulled from."
+        },
+        "SecondarySourceIp": {
+          "shape": "__string",
+          "locationName": "secondarySourceIp",
+          "documentation": "This represents the ip address of the device sending the secondary multicast stream."
+        },
+        "SecondaryUrl": {
+          "shape": "__string",
+          "locationName": "secondaryUrl",
+          "documentation": "This represents the customer's secondary source URL where the redundant multicast stream (SMPTE 2022-7) is pulled from."
         }
       },
       "documentation": "Pair of multicast url and source ip address (optional) that make up a multicast source.",
@@ -28077,6 +28199,16 @@
           "shape": "__string",
           "locationName": "url",
           "documentation": "This represents the customer's source URL where multicast stream is pulled from."
+        },
+        "SecondarySourceIp": {
+          "shape": "__string",
+          "locationName": "secondarySourceIp",
+          "documentation": "This represents the ip address of the device sending the secondary multicast stream."
+        },
+        "SecondaryUrl": {
+          "shape": "__string",
+          "locationName": "secondaryUrl",
+          "documentation": "This represents the customer's secondary source URL where the redundant multicast stream (SMPTE 2022-7) is pulled from."
         }
       },
       "documentation": "Pair of multicast url and source ip address (optional) that make up a multicast source.",
@@ -29838,6 +29970,11 @@
           "shape": "MediaPackageV2WatermarkingSettings",
           "locationName": "watermarkingSettings",
           "documentation": "Specifies the type of watermarking technology to use."
+        },
+        "CaptionLanguageSetting": {
+          "shape": "MediaPackageV2CaptionLanguageSetting",
+          "locationName": "captionLanguageSetting",
+          "documentation": "Applies only to 608 Embedded output captions. Controls the CLOSED-CAPTIONS signaling that MediaPackage v2 writes into the HLS manifest it delivers.\nauto: The default. If captionLanguageMappings is non-empty, the HLS manifest includes a CLOSED-CAPTIONS line for each mapped caption channel. If captionLanguageMappings is empty, the HLS manifest omits any CLOSED-CAPTIONS line.\nnone: The HLS manifest carries CLOSED-CAPTIONS=NONE on each EXT-X-STREAM-INF tag, which signals to players that the stream has no closed captions, so they stop offering a CC track. The API rejects none combined with a non-empty captionLanguageMappings."
         }
       },
       "documentation": "Media Package V2 Group Settings"
@@ -30972,7 +31109,7 @@
       "type": "structure",
       "members": {
         "EmbeddingFrequency": {
-          "shape": "__doubleMin250Max5000",
+          "shape": "__double",
           "locationName": "embeddingFrequency",
           "documentation": "The frequency with which watermarks will be embedded, in milliseconds."
         },
@@ -31199,6 +31336,136 @@
         "shape": "OutputUsage"
       },
       "documentation": "Placeholder documentation for __listOfOutputUsage"
+    },
+    "AutoFilterSettings": {
+      "type": "structure",
+      "members": {},
+      "documentation": "System-managed filter selection. Resolves to the perceptual filter at strength 1 where the codec\nis eligible (AV1 and H.265 unconditionally; H.264 only at enhanced_quality), and to no filter\notherwise. An empty / undefined filter_settings_choice is treated as \"auto\".\n\nCarries no body (extends EmptySettings, which sets additionalProperties: false), mirroring the\nColorSpacePassthroughSettings empty-settings pattern."
+    },
+    "Av1FilterSettings": {
+      "type": "structure",
+      "members": {
+        "AutoFilterSettings": {
+          "shape": "AutoFilterSettings",
+          "locationName": "autoFilterSettings"
+        },
+        "NoneFilterSettings": {
+          "shape": "NoneFilterSettings",
+          "locationName": "noneFilterSettings"
+        },
+        "PerceptualFilterSettings": {
+          "shape": "PerceptualFilterSettings",
+          "locationName": "perceptualFilterSettings"
+        }
+      },
+      "documentation": "Av1 Filter Settings"
+    },
+    "H264AllowExplicitWeightedPrediction": {
+      "type": "string",
+      "documentation": "H264 Allow Explicit Weighted Prediction",
+      "enum": [
+        "DISABLED",
+        "ENABLED"
+      ]
+    },
+    "NoneFilterSettings": {
+      "type": "structure",
+      "members": {},
+      "documentation": "Explicitly disables the video filter. This is the customer opt-out: a video description set to\n\"none\" never has a filter applied and is never overridden by the system-managed \"auto\" default.\n\nCarries no body (extends EmptySettings, which sets additionalProperties: false), mirroring the\nColorSpacePassthroughSettings empty-settings pattern."
+    },
+    "PerceptualFilterSettings": {
+      "type": "structure",
+      "members": {
+        "Strength": {
+          "shape": "PerceptualFilterStrength",
+          "locationName": "strength",
+          "documentation": "Selects the perceptual noise filter strength. Strength 1 (perceptual lite) is the recommended default and adds\napproximately 30% of an AVC encode of compute on the highest rendition. Strength 2 adds approximately 60% of an\nAVC encode of compute and can introduce slight softening on noisy content."
+        }
+      },
+      "documentation": "Perceptual Filter Settings",
+      "required": [
+        "Strength"
+      ]
+    },
+    "PerceptualFilterStrength": {
+      "type": "string",
+      "documentation": "Perceptual Filter Strength",
+      "enum": [
+        "STRENGTH_1",
+        "STRENGTH_2"
+      ]
+    },
+    "MediaPackageV2CaptionLanguageSetting": {
+      "type": "string",
+      "documentation": "Media Package V2 Caption Language Setting",
+      "enum": [
+        "AUTO",
+        "NONE"
+      ]
+    },
+    "JpegXsInputMaximumBitrate": {
+      "type": "string",
+      "documentation": "Maximum JPEG XS input bitrate in megabits per second",
+      "enum": [
+        "MAX_500_MBPS"
+      ]
+    },
+    "JpegXsInputResolution": {
+      "type": "string",
+      "documentation": "Maximum JPEG XS input resolution; HD is 720 to 1080 lines of vertical resolution",
+      "enum": [
+        "HD"
+      ]
+    },
+    "JpegXsInputSpecification": {
+      "type": "structure",
+      "members": {
+        "Codec": {
+          "shape": "InputCodec",
+          "locationName": "codec",
+          "documentation": "Input codec. Must be JPEGXS."
+        },
+        "MaximumBitrate": {
+          "shape": "JpegXsInputMaximumBitrate",
+          "locationName": "maximumBitrate",
+          "documentation": "Maximum JPEG XS input bitrate"
+        },
+        "Resolution": {
+          "shape": "JpegXsInputResolution",
+          "locationName": "resolution",
+          "documentation": "Maximum JPEG XS input resolution"
+        }
+      },
+      "documentation": "Specification of the JPEG XS input for this channel. Use instead of inputSpecification when the input codec is JPEG XS."
+    },
+    "EmbeddedModeType": {
+      "type": "string",
+      "documentation": "Controls what the embedded encoder generates.\n- \"embedded_608_only\": CEA-608 CC pairs only\n- \"embedded_708_only\": CEA-708 service blocks only\n- \"embedded_608_and_708\": Both 608 and 708",
+      "enum": [
+        "EMBEDDED_608_AND_708",
+        "EMBEDDED_608_ONLY",
+        "EMBEDDED_708_ONLY"
+      ]
+    },
+    "WebvttSourceSettings": {
+      "type": "structure",
+      "members": {
+        "GroupId": {
+          "shape": "__stringMin1",
+          "locationName": "groupId",
+          "documentation": "Optional. The \"GROUP-ID\" attribute of the #EXT-X-MEDIA subtitle rendition to use from the HLS source. Specify it\ntogether with name; the pair must exactly match one rendition, otherwise this caption selector produces no\ncaptions. If neither groupId nor name is specified, MediaLive selects the rendition whose LANGUAGE matches the\ncaption selector's language code (case-insensitive), then the DEFAULT=YES rendition, then the first subtitle\nrendition listed in the master playlist."
+        },
+        "Name": {
+          "shape": "__stringMin1",
+          "locationName": "name",
+          "documentation": "Optional. The \"NAME\" attribute of the #EXT-X-MEDIA subtitle rendition to use from the HLS source. Specify it\ntogether with groupId; the pair must exactly match one rendition, otherwise this caption selector produces no\ncaptions. If neither groupId nor name is specified, MediaLive selects the rendition whose LANGUAGE matches the\ncaption selector's language code (case-insensitive), then the DEFAULT=YES rendition, then the first subtitle\nrendition listed in the master playlist."
+        }
+      },
+      "documentation": "Webvtt Source Settings"
+    },
+    "__integerMin1Max63": {
+      "type": "integer",
+      "documentation": "Placeholder documentation for __integerMin1Max63"
     }
   },
   "documentation": "API for AWS Elemental MediaLive"
